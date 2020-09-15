@@ -1,0 +1,273 @@
+---
+title: "Population synthesis: Putting it together, large-scale IPF and resampling"
+output: html_notebook
+---
+
+It is now time to construct a synthetic population. As the data-set on which we work is relative large, a way of creating a synthetic population is to re-sample directly from the sample (with replacement) based on properly defined sample weights.
+
+The sample weights can be generated from an IPF and will then reflect that the sample is properly aligned with the targets of the IPF. 
+
+Installation of some packages.
+
+```{r}
+
+
+install.packages("rgdal")
+install.packages("ggplot2")
+install.packages("rgeos")
+install.packages("mipfp")
+install.packages("plyr")
+install.packages("sampling")
+install.packages("data.table")
+```
+
+Require the different packages
+
+```{r}
+#library(rgdal) #geospatial data
+#library(ggplot2)
+#library(rgeos) 
+require("rgdal")
+require("ggplot2")
+require("rgeos")
+require("mipfp")
+require("plyr")
+require("sampling")
+require("data.table")
+library(openxlsx) # Library package statement
+```
+
+```{r setup}
+knitr::opts_knit$set(root.dir = 'C:/Users/Popof/Desktop/course notes/Week2 - Population synthesis/Code')
+```
+
+Import data: IPF fitted weights (for different years) and the survey 
+
+```{r}
+################ First re-sampling with IPF weights ################
+
+#Lib reference
+#setwd("M:/42188/Data")
+#setwd("U:/Man/TM/Jeppe Rich/42188/Data")
+
+#Importing csv
+
+#2017 Weights
+IPF17 <- read.csv(file="./Pop synthesis/Population synthesis Case4/Results/IPF17.csv", header=TRUE, sep=",")
+
+TUSample <- read.csv(file="./TU sample/TU_CPH_Sample_Course.csv", header=TRUE, sep=",")
+
+head(IPF17, n=10)
+
+```
+
+Now we can merge the fitted weights to the original data!
+
+```{r}
+
+#Merge IPF weights/probabilities to the original data
+TUSample$AgeID <- TUSample$AgeGroup
+TUSample <- merge(IPF17, TUSample, by = c("ZID", "Male", "AgeID", "IncomeID"), all.x=0, sort=1)
+
+#Re-sampling with replacement: Sample 1000 individuals only by sessionID!
+set.seed(321)
+TUSamp_replace1000 <- sample(TUSample$SessionID,replace = TRUE, prob = TUSample$ProbVal,1000)
+
+head(TUSamp_replace1000, n=10)
+
+#Re-sampling without replacement: Sample 1000 individuals only in this case!
+set.seed(111)
+TUSamp_Noreplace1000 <- sample(TUSample$SessionID,replace = FALSE, prob = TUSample$ProbVal,1000)
+
+head(TUSamp_Noreplace1000, n=10)
+
+#Convert to Data frame
+TUSamp_replace1000 <- adply(TUSamp_replace1000, c(1), id = NA)
+
+#Rename columns
+names(TUSamp_replace1000)[1:2] <- c("ID", "SessionID")
+
+#Merge to initial structure: the sample is now a weighted sample with IPF weights
+TUSamp_replace1000 <- merge(TUSamp_replace1000, TUSample, by = c("SessionID"), all.x=0, sort=1)
+
+head(TUSamp_replace1000, n=10)
+
+
+```
+
+So here we are. Now we have re-sampled a population from the previous micro-data set. It is a stratified sample consisting of sampled agents and their entire trip diaries. 
+
+It is a sample scheme, which means that things will not add up exactly. So, even though we sample with the proper weights, wer cannot be sure that there are "X" persons in a given municipality as suggested by the targets. This is sometimes a problem because we would like our models to be consistent with official targets. 
+
+A way to circumvent this problem, is to apply quota-based sampling. 
+
+```{r}
+#############################################
+# Strate-based (quota-based sampling)
+
+#Say you have a population quota for each municipality equalt to 1000  
+n <- 32
+quote <- rep(1000, n)
+
+head(quote, n=10)
+
+
+#Strata based sampling with replacement: will generate a list with multiple repeated households up to the level of the quota
+TUSample_Strata <- strata(TUSample, c("ZID"), quote, method=c("srswr"), description=FALSE)
+
+#############################################
+
+```
+
+Quota-based sampling can be used as an "after-burner" in your simulation in the sense that;
+
+1) First you generate a sufficiently large population at random (with the IPF weights as sample weights).
+
+2) Then you sample from this population sample up to the level of the quotes. 
+
+A challenge in this case you need to be aware of, is that you would like to sample the individuals up to the quotes, not the diaries! Hence, you need (again) to create a population-file which can then afterwards be joined with the survey.
+
+
+```{r}
+################# Spatial Data Loading ######################
+
+
+
+#Reads a shapefile data and layer into a suitable spatial vector object
+
+zonesL2 <- readOGR(dsn="./Population data L2 zones/Shape files", layer="zones_L2_cph")    
+
+#zonesL2 <- readOGR(dsn="U:/Man/TM/Jeppe Rich/42188/Data/Population data L2 zones/Shape files", layer="zones_L2_cph")    
+
+#Allocate an id to the shapefile data
+zonesL2$id <- row.names(zonesL2) 
+
+#Shapefile dataset (first observations)
+head(zonesL2@data) 
+
+#Data type of each variable in shapefile dataset
+sapply(zonesL2@data, class) 
+
+#Plot polygons
+plot(zonesL2)  
+
+#fortify supplies spatial data as a data.frame for the ggmaps
+zonesL2_f <- fortify(zonesL2)
+
+############ Data preparation for plotting ###############
+
+## A) Heatmap: Number of cars / per capita
+## B) Heatmap: Average age 
+## C) Heatmap: Population density 
+
+#TU sample of observed individuals 
+TUSamp_Indiv <- TUSamp_replace1000[!duplicated(TUSamp_replace1000$SessionID), ]  
+
+
+## A) Heatmap: Number of cars / per capita
+#Number of cars observed per zone
+Cars_per_zone <- aggregate(list(NumCars=TUSamp_Indiv$HousehNumCars), by=list(zoneid=TUSamp_Indiv$HomeZoneID2), sum)
+
+#Number of household members observed per zone
+Pers_per_zone <- aggregate(list(NumPers=TUSamp_Indiv$FamNumPers), by=list(zoneid=TUSamp_Indiv$HomeZoneID2), sum)
+
+#Merge data to shapefile
+zonesL2@data <-  merge(zonesL2@data, Cars_per_zone, by = c("zoneid"), all.x=1, sort=1)
+zonesL2@data <-  merge(zonesL2@data, Pers_per_zone, by = c("zoneid"), all.x=1, sort=1)
+
+#Number of cars per capita
+zonesL2@data$Cars_per_cap <- zonesL2@data$NumCars/zonesL2@data$NumPers
+
+## B) Heatmap: Average age 
+#Average age of observed individuals per zone
+AvAge_per_zone <- aggregate(list(AvAge=TUSamp_Indiv$RespAgeCorrect), by=list(zoneid=TUSamp_Indiv$HomeZoneID2), mean)
+
+#Merge data to shapefile
+zonesL2@data <-  merge(zonesL2@data, AvAge_per_zone, by = c("zoneid"), all.x=1, sort=1)
+
+## C) Heatmap: Population density 
+#Loading population per zone
+Pop_per_zone <- read.csv(file="./Population data L2 zones/dev_Pop_L2ZoneData_Full_Pop2010_cph.csv", header=TRUE, sep=",")
+Pop_per_zone <- Pop_per_zone[c("ZoneID", "Population")]
+names(Pop_per_zone)[1] <- "zoneid"
+
+#Merge data to shapefile
+zonesL2@data <-  merge(zonesL2@data, Pop_per_zone, by = c("zoneid"), all.x=1, sort=1)
+
+#Number of individuals per km2
+zonesL2@data$Pop_dens <- zonesL2@data$Population/(zonesL2@data$Shape_Area/1000000)
+
+
+#Merge spatial data and variables in shapefile dataset to the same data.frame
+zonesL2_f <- merge(zonesL2_f, zonesL2@data, by = c("id"), all.x=1)
+head(zonesL2_f) 
+
+```
+
+First plot is a heat-map for cars per capita 
+
+```{r}
+###### Plot ##################
+
+## A) Heatmap: Number of cars / per capita
+
+ggplot(data = zonesL2_f, 
+       aes(x = long, y = lat, fill = Cars_per_cap, group = group)) +   # define variable to be plotted
+  geom_polygon() +                                                     # plot the boroughs
+  geom_path(colour="black", lwd=0.05) +                                # borough borders
+  coord_equal()+                                                       # fixed x and y scales
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red",       # colors
+                       midpoint=0.7, na.value="white",
+                       name = "Number of cars per capita") +           # legend options
+  theme(panel.grid.major = element_blank(),                            # change the theme options
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.text = element_blank(),                                   
+        axis.title = element_blank(),                                  
+        axis.ticks = element_blank())                                  
+
+```
+
+Next map is an average heat-map for age
+
+```{r}
+## B) Heatmap: Average age 
+
+ggplot(data = zonesL2_f, 
+       aes(x = long, y = lat, fill = AvAge, group = group)) +          # define variable to be plotted
+  geom_polygon() +                                                     # plot the boroughs
+  geom_path(colour="black", lwd=0.05) +                                # borough borders
+  coord_equal()+                                                       # fixed x and y scales
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red",       # colors
+                       midpoint = 45, na.value="white", name = "Average age") + # legend options
+  theme(panel.grid.major = element_blank(),                            # change the theme options
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.text = element_blank(),                                   
+        axis.title = element_blank(),                                  
+        axis.ticks = element_blank())                                 
+
+```
+
+Finally a population density map.
+
+```{r}
+## C) Heatmap: Population density 
+
+ggplot(data = zonesL2_f, 
+       aes(x = long, y = lat, fill = Pop_dens, group = group)) +          # define variable to be plotted
+  geom_polygon() +                                                     # plot the boroughs
+  geom_path(colour="black", lwd=0.05) +                                # borough borders
+  coord_equal()+                                                       # fixed x and y scales
+  scale_fill_gradient2(low = "blue", mid = "yellow", high = "red",       # colors
+                       midpoint = 5000, na.value="white", name = "Population density") + # legend options
+  theme(panel.grid.major = element_blank(),                            # change the theme options
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.text = element_blank(),                                   
+        axis.title = element_blank(),                                  
+        axis.ticks = element_blank())  
+
+
+```
+

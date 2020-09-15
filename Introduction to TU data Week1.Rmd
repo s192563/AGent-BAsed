@@ -1,0 +1,150 @@
+---
+title: "Data for the mobility pattern of Copenhagen (TU data)"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook in which we are going to exploarer TU data in greater details in order to analyse the mobility pattern of Copenhagen. Focus will be on how to visiually illustrate data and how analyse simple patterns.
+
+The aim is to get hand-on experience with TU data, be introduced to  R data visualisation and data analysis.
+
+```{r}
+
+################ Installing packages ################
+
+#install.packages("mipfp")
+#install.packages("plyr")
+#require("mipfp")
+require("plyr")
+
+################ Import data ################
+
+library(openxlsx) # Library package statement
+
+#Lib reference
+#setwd("U:/Man/TM/Jeppe Rich/42188/Data")
+#TUSample <- read.csv(file="./TU sample/TU_CPH_Sample_Course.csv", header=TRUE, sep=",")
+
+setwd("M:/42188/2020/Data");
+TUSample <- read.csv(file="./TU_CPH_Sample_Course.csv", header=TRUE, sep=",")
+
+
+```
+
+The first excercise is to generate a generic summary for all variables and also illustrate how to plot a simple histogram and a kernel density (smoothened density).
+
+```{r}
+
+# A standard summary
+summary(TUSample)
+
+# A trip distribution histogram
+h<-hist(TUSample$TotalLen, breaks=100, col="red", xlab="Distance ",
+        main="Figure: Overall trip length distribution", xlim=c(0,300), freq = FALSE)
+
+# Kernel density
+kernel <- density(TUSample$TotalLen) 
+
+# Plot the density function
+plot(kernel, main="Figure: Overall trip length kernel distribution ", xlim=c(0,200))
+
+```
+
+Below we illustrate the use of Box-Plots
+
+```{r}
+
+##### Box-plot
+
+##### Box-plot
+
+category <- cut(TUSample$CategoryID, breaks=c(1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5), 
+                labels=c("Work","Edu", "Escort", "Shop", "Leisure", "Business"))
+
+boxplot(TotalLen~category,data=TUSample, main="Trip length",
+        xlab="Trip purpose", ylab="Duration (min)") 
+
+```
+And below the "violin" variant
+
+```{r}
+
+library(ggplot2)
+
+##### Illustration of violine plots
+qplot(category, TotalLen, data = TUSample, 
+      geom= "violin", fill = category)
+
+#### Map to plot ID
+violin <- qplot(category, TotalLen, data = TUSample, 
+      geom= "violin", fill = category)
+
+
+```
+
+And different advanced scatter-plots 
+
+```{r}
+library(ggpubr) 
+
+#Standard scatter plot
+b <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+b + geom_point()
+
+#Scatter plot by group and color
+a <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+a + geom_point(aes(color = category))
+
+#Scatter with smoothing and confidence levels
+b <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+b + geom_smooth(se=TRUE, level = 0.99, aes(color = category)) 
+
+#Isocrone maps
+c <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+c + geom_density_2d(aes(color = category)) 
+
+```
+
+And also the illustration of different types of heat-maps
+
+```{r}
+#### Heatmaps presentation of data
+
+library(ggplot2)
+
+d2 <- ggplot(subset(TUSample, category %in% c("Leisure")), aes(x = PrimTargetDweltime, y = TotalLen))
+
+d2 + geom_bin2d() + scale_fill_gradientn(limits=c(0,50), breaks=seq(0, 40, by=10), colours=rainbow(4)) + 
+  scale_color_manual(values=c('red','blue')) +
+  scale_size_manual(values=c(3, 3))
+
+#### Map to new plot ID
+heat <- d2 + geom_bin2d() + scale_fill_gradientn(limits=c(0,50), breaks=seq(0, 40, by=10), colours=rainbow(4)) + 
+  scale_color_manual(values=c('red','blue')) +
+  scale_size_manual(values=c(3, 3))
+
+
+```
+
+And side-by-side plots
+
+```{r}
+#### Arranging side-by-side plots: Works only for some plots
+ggarrange(violin, heat, 
+          labels = c("Violin", "Heat"),
+          ncol = 2, nrow = 1)
+
+
+```
+
+```{r}
+
+#### Question 1: Analyse the departure-time distribution for work.
+
+#### Question 2: The main-mode of transport, does it vary with age and gender?
+
+#### Question 3: Is it a myth that education and income are correlated?
+
+#### Question 4: Is there a sign that car-ownership for younger groups (say, below the age of 35) have                    fewer cars now compared to earlier generations? How would you analyse?
+
+#### Question 5: Are the accessibility scores correlated with the probability of selecting public transport?
+

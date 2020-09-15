@@ -1,0 +1,182 @@
+---
+title: "Population synthesis on the basis of Gibbs-sampling"
+output: html_notebook
+---
+
+```{r}
+################ Setting up the data: Illustration of Gibbs-sampling   ################
+
+install.packages("mipfp")
+install.packages("plyr")
+install.packages("plotrix")
+install.packages("tidyr")
+install.packages("ztable")
+
+require("mipfp")
+require("plyr")
+require("plotrix")
+require("tidyr")
+require("ztable")
+```
+
+
+When creating a synthetic population of agents over some feature-set, it is possible to build a pool of agents (with these features) and then apply some sort of re-sampling from that pool. 
+
+A way to approximate such distributions is by using Gibbs sampling, where we draw from margins. For a very simple 3-by-3 case it may look like. 
+
+
+```{r}
+
+##############################################
+# Case1: Implementing a simple Gibbs-sampler #
+##############################################
+
+#Initialise data 
+
+initial.guess <- c(53, 39, 60, 40, 78, 83, 29, 98, 80)
+#initial.guess0 <- c(1, 1, 1, 1, 1, 1, 1, 1, 1)
+
+dim(initial.guess) = c(3,3)
+initial.guess = t(initial.guess)
+
+df = data.frame(initial.guess) # Converting to dataframe for data modification
+
+inc_cat = c('inc_1', 'inc_2', 'inc_3') # Names of income categories 
+age_cat = c('age_1', 'age_2', 'age_3') # Names of age categories
+
+colnames(df) <- age_cat # Change the names of the columns of the dataframe
+df = cbind(inc_cat, df) # Add a column with income names
+
+data_long <- gather(df, age_cat, values, age_1:age_3, factor_key=TRUE) # Change dataframe format from wide to long (three columns, two with variable names, one with values per combination)
+
+data_long$inc_cat <- as.character(data_long$inc_cat) # Strings are easier to work with than factorial variables
+data_long$age_cat <- as.character(data_long$age_cat) # Strings are easier to work with than factorial variables
+
+num_samples = 1000 
+sampled_individuals <- data.frame(matrix(NA, nrow = num_samples+1, ncol = 2)) # Initialize matrix
+colnames(sampled_individuals) <- list('inc_cat', 'age_cat') # Change names
+
+sampled_individuals[1,1] <- sample(data_long[,'inc_cat'], 1) # Initialize the gibbs sampler
+
+print(sampled_individuals[1,1])
+
+```
+
+Now define the loop from which the drawing from the conditionals are carried out.
+
+```{r}
+# Loop when the conditional sampling is carried out
+for (n in 1:num_samples){
+  
+## Draw for age 
+  condition_on_inc = data_long[which(data_long[,'inc_cat']==sampled_individuals[n, 'inc_cat']),]
+  sampled_individuals[n, 'age_cat'] = sample(condition_on_inc[,'age_cat'], 1, prob = condition_on_inc$values/sum(condition_on_inc$values))
+  
+## Draw for inc 
+  condition_on_age = data_long[which(data_long[,'age_cat']==sampled_individuals[n, 'age_cat']),]
+  sampled_individuals[n+1, 'inc_cat'] = sample(condition_on_age[,'inc_cat'], 1, prob = condition_on_age$values/sum(condition_on_age$values))
+}
+
+# Storing the 1000 individuals to a dataframe
+
+Gibbs_sample = sampled_individuals[1:1000,]
+head(Gibbs_sample,10)
+
+#Adding an ID
+Gibbs_sample$ID <- seq.int(nrow(Gibbs_sample))
+
+Gibbs_table <- table(Gibbs_sample$inc_cat,Gibbs_sample$age_cat)
+
+# Use Ztable for nice heatmap presentation
+ztable(Gibbs_table) %>%
+  makeHeatmap() %>% print(caption="Gibbs heatmap")
+
+# Print with caption
+print(Gibbs_table,caption="Gibbs sampled frequencies")
+
+#### Similar for Initial! ####
+
+# Different table functions
+margin.table(Gibbs_table, 1) # A frequencies (summed over B)
+margin.table(Gibbs_table, 2) # B frequencies (summed over A)
+
+prop.table(Gibbs_table) # cell percentages
+
+prop.table(Gibbs_table, 1) # row percentages
+prop.table(Gibbs_table, 2) # column percentages
+
+```
+
+Now what to do with this pool of people? Its essentially just reflecting the distribution of the starting solution and the rendering of an agent-based representation!
+
+The trick is now to apply re-sampling from that pool
+
+```{r}
+#Set starting solution
+
+initial.guess <- c(53, 39, 60, 40, 78, 83, 29, 98, 80)
+#initial.guess0 <- c(1, 1, 1, 1, 1, 1, 1, 1, 1)
+
+dim(initial.guess) = c(3,3)
+initial.guess = t(initial.guess)
+
+#Set margins 
+target.income <- c(3000, 3200, 3800)
+target.age <- c(2000, 4000, 4000)
+
+target.data.2005 <- list(target.income, target.age)
+
+print(target.data.2005)
+
+#Set the dimensions of the target data, income is first and age is second
+target.dim <- list(1,2)
+
+#Call the IPF
+Fit_3_3_2005 <- Ipfp(initial.guess, target.dim, target.data.2005, print = TRUE, tol = 0.0011)
+
+#Dump IPF fitted array
+Fit <- Fit_3_3_2005$x.hat
+Prob <- Fit_3_3_2005$p.hat
+
+#Convert to Data frame
+FitDB <- adply(Fit, c(1,2), id = NA)
+ProbDB <- adply(Prob, c(1,2), id = NA)
+
+#Rename columns
+ProbDB <- rename(ProbDB, c("X1" = "income", "X2"="age", "V1"="Prob"))
+
+# First create the new field
+ProbDB$inc_cat <- NA
+ProbDB$age_cat <- NA
+
+# Then recode the old field into the new one for the specified rows
+ProbDB$inc_cat[ProbDB$income==1] <- "inc_1"
+ProbDB$inc_cat[ProbDB$income==2] <- "inc_2"
+ProbDB$inc_cat[ProbDB$income==3] <- "inc_3"
+
+ProbDB$age_cat[ProbDB$age==1] <- "age_1"
+ProbDB$age_cat[ProbDB$age==2] <- "age_2"
+ProbDB$age_cat[ProbDB$age==3] <- "age_3"
+
+#Merge IPF weights/probabilities to the original data
+Gibbs_sample <- merge(Gibbs_sample, ProbDB, by = c("inc_cat", "age_cat"), all.x=1, sort=1)
+
+#Re-sampling with replacement
+set.seed(321)
+Gibbs_sample1000 <- sample(Gibbs_sample$ID,replace = TRUE, prob = Gibbs_sample$Prob, 1000)
+
+#Convert to Data frame
+Gibbs_sample1000 <- adply(Gibbs_sample1000, c(1), id = NA)
+
+#Rename columns
+names(Gibbs_sample1000)[1:2] <- c("ID_samp", "ID")
+
+#Merge to initial structure: the sample is now a weighted sample with IPF weights
+Gibbs_sample1000 <- merge(Gibbs_sample1000, Gibbs_sample, by = c("ID"), all.x=0, sort=1)
+
+head(Gibbs_sample1000, 10)
+
+#Analyse the structure of the population
+
+```
+

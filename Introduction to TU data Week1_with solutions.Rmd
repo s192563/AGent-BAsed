@@ -1,0 +1,339 @@
+---
+title: "Data for the mobility pattern of Copenhagen (TU data)"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook in which we are going to exploarer TU data in greater details in order to analyse the mobility pattern of Copenhagen. Focus will be on how to visiually illustrate data and how analyse simple patterns.
+
+The aim is to get hand-on experience with TU data, be introduced to  R data visualisation and data analysis.
+
+```{r}
+
+################ Installing packages ################
+
+#install.packages("mipfp")
+#install.packages("plyr")
+#require("mipfp")
+require("plyr")
+
+################ Import data ################
+
+library(openxlsx) # Library package statement
+
+#Lib reference
+#setwd("U:/Man/TM/Jeppe Rich/42188/Data")
+#TUSample <- read.csv(file="./TU sample/TU_CPH_Sample_Course.csv", header=TRUE, sep=",")
+
+setwd("//ait-phnas03.win.dtu.dk/cn_grupper$/Courses/42/42188/Students/TUdata");
+TUSample <- read.csv(file="./TU_CPH_Sample_Course.csv", header=TRUE, sep=",")
+
+
+```
+
+The first excercise is to generate a generic summary for all variables and also illustrate how to plot a simple histogram and a kernel density (smoothened density).
+
+```{r}
+
+# A standard summary
+summary(TUSample)
+
+# A trip distribution histogram
+h<-hist(TUSample$TotalLen, breaks=100, col="red", xlab="Distance ",
+        main="Figure: Overall trip length distribution", xlim=c(0,300), freq = FALSE)
+
+# Kernel density
+kernel <- density(TUSample$TotalLen) 
+
+# Plot the density function
+plot(kernel, main="Figure: Overall trip length kernel distribution ", xlim=c(0,200))
+
+```
+
+Below we illustrate the use of Box-Plots
+
+```{r}
+
+##### Box-plot
+
+##### Box-plot
+
+category <- cut(TUSample$CategoryID, breaks=c(1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5), 
+                labels=c("Work","Edu", "Escort", "Shop", "Leisure", "Business"))
+
+boxplot(TotalLen~category,data=TUSample, main="Trip length",
+        xlab="Trip purpose", ylab="Duration (min)") 
+
+```
+And below the "violin" variant
+
+```{r}
+
+library(ggplot2)
+
+##### Illustration of violine plots
+qplot(category, TotalLen, data = TUSample, 
+      geom= "violin", fill = category)
+
+#### Map to plot ID
+violin <- qplot(category, TotalLen, data = TUSample, 
+      geom= "violin", fill = category)
+
+
+```
+
+And different advanced scatter-plots 
+
+```{r}
+library(ggpubr) 
+
+#Standard scatter plot
+b <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+b + geom_point()
+
+#Scatter plot by group and color
+a <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+a + geom_point(aes(color = category))
+
+#Scatter with smoothing and confidence levels
+b <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+b + geom_smooth(se=TRUE, level = 0.99, aes(color = category)) 
+
+#Isocrone maps
+c <- ggplot(TUSample, aes(x = PrimTargetDweltime, y = TotalLen))
+c + geom_density_2d(aes(color = category)) 
+
+```
+
+And also the illustration of different types of heat-maps
+
+```{r}
+#### Heatmaps presentation of data
+
+library(ggplot2)
+
+d2 <- ggplot(subset(TUSample, category %in% c("Leisure")), aes(x = PrimTargetDweltime, y = TotalLen))
+
+d2 + geom_bin2d() + scale_fill_gradientn(limits=c(0,50), breaks=seq(0, 40, by=10), colours=rainbow(4)) + 
+  scale_color_manual(values=c('red','blue')) +
+  scale_size_manual(values=c(3, 3))
+
+#### Map to new plot ID
+heat <- d2 + geom_bin2d() + scale_fill_gradientn(limits=c(0,50), breaks=seq(0, 40, by=10), colours=rainbow(4)) + 
+  scale_color_manual(values=c('red','blue')) +
+  scale_size_manual(values=c(3, 3))
+
+
+```
+
+And side-by-side plots
+
+```{r}
+#### Arranging side-by-side plots: Works only for some plots
+ggarrange(violin, heat, 
+          labels = c("Violin", "Heat"),
+          ncol = 2, nrow = 1)
+
+
+```
+
+```{r}
+
+#### Question 1: Analyse the departure-time distribution for work.
+library(MASS)
+library(dplyr)
+#### Visualise how the distribution differs from day to day?
+HoldDays<-TUSample[TUSample$CategoryID==2,c(3,4,13,14)]
+HoldDays<-na.omit(HoldDays)
+HoldDays$DiaryWeekday<-factor(HoldDays$DiaryWeekday)
+p1<-ggplot(HoldDays,aes(x = DepartureMsm, fill = DiaryWeekday))+geom_density(alpha=0.4)
+p1
+p2<-ggplot(HoldDays,aes(x = DepartureMsm,col=DiaryWeekday))+geom_density() + facet_wrap(~DiaryWeekday)
+p2
+
+#### Is there a different in how early people start over the years?
+YearlySum<-HoldDays %>% group_by(DiaryYear) %>% summarize(q1=quantile(DepartureMsm, probs=0.25),
+            q3=quantile(DepartureMsm, probs=0.75),mean = mean(DepartureMsm))
+
+
+library(reshape2)
+YearlySum<-melt(YearlySum,id.vars="DiaryYear")
+ggplot(YearlySum, aes(DiaryYear, value, colour = variable)) + geom_line()
+
+#### What about education and work? Are they similar?
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#### Question 2: The main-mode of transport, does it vary with age and gender?
+### Hard to visualize three way tables
+## https://pdfs.semanticscholar.org/4e31/116d2e6e0e0339e72859764242acfe8dbe30.pdf For those who want something more concrete
+
+library(MASS)
+library(dplyr)
+
+ModeAgeGender<- TUSample %>% select(ModeID,AgeGroup,Male)
+ModeAgeGender$ModeID<-as.factor(ModeAgeGender$ModeID)
+ModeAgeGender$AgeGroup<-as.factor(ModeAgeGender$AgeGroup)
+ModeAgeGender$Male<-as.factor(ModeAgeGender$Male)
+mosaicplot(~ModeID+AgeGroup+Male,data=ModeAgeGender,color=TRUE)
+TableHold<-table(ModeAgeGender$ModeID,ModeAgeGender$AgeGroup,ModeAgeGender$Male)
+ftable(TableHold)
+TableHold<-xtabs(~ModeID+AgeGroup+Male,data=ModeAgeGender)
+##Mutual independence
+loglm(~ModeID+AgeGroup+Male,TableHold)
+#Conditional independence
+loglm(~ModeID+AgeGroup+Male+ModeID*AgeGroup+AgeGroup*Male, TableHold)
+#Three way interaction
+loglm(~ModeID+AgeGroup+Male+ModeID*AgeGroup+ModeID*Male+AgeGroup*Male, TableHold)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+#### Question 3: Is it a myth that education and income are correlated?
+EduIncome<- TUSample %>% select(RespEdulevel,IncomeID)
+EduIncome$RespEdulevel<-as.factor(EduIncome$RespEdulevel)
+EduIncome$IncomeID<-as.factor(EduIncome$IncomeID)
+EduIncome<-na.omit(EduIncome)
+ggplot(EduIncome,aes(x=RespEdulevel,y=as.numeric(IncomeID),color=RespEdulevel))+geom_boxplot(outlier.shape = NA)
+#Chi-SQ
+chisq.test(EduIncome$RespEdulevel,EduIncome$IncomeID,correct=F)
+##Clear rejection, shows dependence
+
+#Cramers V
+#Based on chi-sq, measure of "correlation" between categorical / nominal variables
+cv.test = function(x,y) {
+  CV = sqrt(chisq.test(x, y, correct=FALSE)$statistic /
+    (length(x) * (min(length(unique(x)),length(unique(y))) - 1)))
+  print.noquote("Cramér V / Phi:")
+  return(as.numeric(CV))
+}
+cv.test(EduIncome$RespEdulevel,EduIncome$IncomeID)
+#So yes, we conclude that they are clearly correlated
+```
+```{r}
+#### Question 4: Is there a sign that car-ownership for younger groups (say, below the age of 35) have                    fewer cars now compared to earlier generations? How would you analyse?
+##Assume that HouseHoldCars == Personal car for this analysis (somewhat uncertain.). To get a bit closer assume that the person must also have a drivers license obtained.
+CarOwnership<-TUSample[between(TUSample$RespAgeCorrect,18,35),]
+CarOwnership<- CarOwnership %>% select(DiaryYear,RespDrivlicYear,HousehNumCars)
+CarOwnership<-na.omit(CarOwnership)
+CarOwnershipSum <- CarOwnership %>% group_by(DiaryYear) %>% 
+  summarize(AvgCars=mean(HousehNumCars),Percentage=sum(HousehNumCars>=1)/n())
+
+ggplotRegression <- function (fit) {
+
+require(ggplot2)
+
+ggplot(fit$model, aes_string(x = names(fit$model)[2], y = names(fit$model)[1])) + 
+  geom_point() +
+  stat_smooth(method = "lm", col = "red") +
+  labs(title = paste("Adj R2 = ",signif(summary(fit)$adj.r.squared, 5),
+                     "Intercept =",signif(fit$coef[[1]],5 ),
+                     " Slope =",signif(fit$coef[[2]], 5),
+                     " P =",signif(summary(fit)$coef[2,4], 5)))
+}
+
+ggplotRegression(lm(AvgCars~DiaryYear,data=CarOwnershipSum))
+ggplotRegression(lm(Percentage~DiaryYear,data=CarOwnershipSum))
+
+#install.packages("mlegp")
+#library(mlegp)
+#GP1<-mlegp(CarOwnershipSum$DiaryYear,CarOwnershipSum$AvgCars)
+#GP1Frame<-CarOwnershipSum
+#GP1Frame$Pred<-GP1$cv[,1]
+#ggplot(GP1Frame, aes(x=DiaryYear, y=AvgCars))+geom_point()+geom_line(aes(x=DiaryYear,y=Pred))
+#GP2<-mlegp(CarOwnershipSum$DiaryYear,CarOwnershipSum$Percentage)
+#GP2Frame<-CarOwnershipSum
+#GP2Frame$Pred<-GP2$cv[,1]
+#ggplot(GP2Frame, aes(x=DiaryYear, y=Percentage))+geom_point()+geom_line(aes(x=DiaryYear,y=Pred))
+
+```
+```{r}
+#### Question 5: Are the accessibility scores correlated with the probability of selecting public transport?
+PublicTransAcc<- TUSample %>% select(ModeID,Acc_P10Pub,Acc_P30Pub,Acc_W10Pub,Acc_W30Pub)
+PublicTransAcc$PubNum<-as.numeric(PublicTransAcc$ModeID==5)
+PublicTransAcc$Pub<-as.factor(PublicTransAcc$PubNum)
+PublicTransAcc<-na.omit(PublicTransAcc)
+p3<-ggplot(PublicTransAcc)+ geom_boxplot(aes(x=Pub, y=Acc_P30Pub, color=Pub))
+p3
+##I doubt 30 minutes is a good measure since we're looking at Copenhagen, 30 minutes basically puts us in Lyngby. Let us try 10 instead.
+p4<-ggplot(PublicTransAcc)+ geom_boxplot(aes(x=Pub, y=Acc_P10Pub, color=Pub))
+p4
+
+##Simple function to plot grid of ggplots.
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+p5<-ggplot(PublicTransAcc)+ geom_boxplot(aes(x=Pub, y=Acc_W30Pub, color=Pub))
+p6<-ggplot(PublicTransAcc)+ geom_boxplot(aes(x=Pub, y=Acc_W10Pub, color=Pub))
+multiplot(p3,p4,p5,p6,cols=2)
+#ANOVA
+HoldA<-aov(Acc_P10Pub~PubNum,data=PublicTransAcc)
+summary(HoldA)
+#Log Reg
+LogReg<-glm(PubNum~Acc_P10Pub,data=PublicTransAcc)
+summary(LogReg)
+```
+
+
+
